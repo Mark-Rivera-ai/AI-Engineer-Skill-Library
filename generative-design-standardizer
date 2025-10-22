@@ -1,0 +1,88 @@
+---
+name: generative-design-standardizer
+description: "Standardize generative design outputs to Azure brand guidelines – enforcing aspect ratios, color palette, typography, and structured prompts for Outreach campaigns."
+version: 0.2.0
+allowed-tools: [code]
+resources:
+  - resources/brand_tokens.json        # Azure color hex codes, font names, style keywords
+  - resources/layout_specs.md          # Aspect ratios, resolutions, panel flows (Title→Info→CTA)
+  - resources/prompt_templates.md      # Prompt blueprints for carousel, infographic, thumbnail, etc.
+  - resources/qa_checklist.md          # Deterministic checks: color usage, contrast, format, tone
+---
+
+# Generative Design Standardizer Skill
+
+## Purpose
+This skill ensures all AI-generated visuals for Social Media Outreach **adhere to our brand’s visual standards and content structure.** It automates the incorporation of Azure’s design language – **aspect ratios (16:9, 1:1, 4:5)**, **core color palette (#0078D4, #FFFFFF, #F2F2F2, #E6E6E6, #0F0F0F)**, and **typography (Segoe UI primary font)** – into image generation prompts. By doing so, we produce consistent, high-quality graphics (LinkedIn carousels, infographics, thumbnails, etc.) that require minimal tweaking in review stages.
+
+Crucially, the skill also embeds collaboration readiness: it outputs structured prompts and spec metadata that make human review easier, and logs key parameters for post-publication analysis. The goal is to **streamline our Generative Design Lab workflow** – from prompt creation all the way to performance feedback – under one standardized process.
+
+## Inputs
+- **Creative Brief:** A description of the content we need – including the topic, key message, intended emotional tone (e.g. “educational, forward-looking”), and target audience.
+- **Asset Type:** The format required – e.g. “Carousel (16:9) with 5 slides,” “Single image post (1:1),” or “Mobile graphic (4:5).” This guides layout and aspect ratio decisions.
+- **Model Preferences:** Optionally, which generative model/stack to target (e.g. “OpenAI DALL-E” vs “Stable Diffusion XL”), since prompt syntax or capabilities (like ControlNet, image variations) may differ.
+- **Reference Imagery (optional):** Any image to use as a style reference or layout guide – e.g. a previous post that performed well, or a branding image whose style we want to emulate. The skill can incorporate reference paths or embeddings if provided.
+
+## Outputs
+- **Prompt Package:** A finalized prompt or set of prompts tailored to the input brief and asset type. This includes:
+  - The **text prompt(s)** for image generation, already infused with our design tokens (colors, fonts, style descriptors) and structured for the required layout. For multi-panel outputs, prompts are segmented or numbered per panel.
+  - **Generation parameters** recommended for the model, such as aspect ratio or pixel resolution (e.g. `1920x1080`), guidance scale or similar (for diffusion models), and any specific instructions like a seed for consistency or the use of variation/adapter techniques. We also specify if any control mechanisms are used (e.g. “uses ControlNet reference for style consistency” or “will generate an initial image and then request 4 variations from it” for DALL·E).
+- **Spec Annotations:** A summary of the brand tokens and guidelines applied – essentially a brief checklist for reviewers, e.g. “Using Azure Blue (#0078D4) as background, white text in Segoe UI, layout split 60/40 text-to-visual.” This lets the Outreach team quickly verify compliance at a glance.
+- **Post-generation QA Report (optional):** If the skill performs any automated checks after images are generated (using the `code` tool), it will output a pass/fail report on aspects like color fidelity (did the output stay in palette?), contrast ratios (is text clearly legible), and any content mismatches (e.g. it will flag if an image contains irrelevant objects or if the style looks off-brand). This report helps in the **Layout/Branding Approval** stages.
+
+*(Note: The skill does **not** directly produce the final images; it prepares the prompts and settings for the Generative Design Lab to execute. Actual image files will be saved and compiled outside this skill, where final naming and export to PDF happen.)*
+
+## Workflow
+1. **Parse Inputs & Template Selection:**
+   - The skill reads the creative brief to understand the desired message, tone, and key imagery. It also identifies the requested asset type and chooses the appropriate template from `resources/prompt_templates.md`. For example, a “LinkedIn Carousel” template might include a generic intro slide prompt and subsequent panel prompts.
+   - It loads the `brand_tokens.json` to fetch required colors, fonts, and style descriptors, and the `layout_specs.md` for any format-specific settings (like how many panels, aspect ratio, recommended resolution).
+
+2. **Pre-flight Consistency Checks:**
+   - Before assembling the final prompt, the skill validates the brief’s content against our guidelines. If the brief requests something outside brand rules (e.g., “neon green background” which conflicts with our palette), the skill will adjust or warn about it. This ensures we *“fail fast”* on out-of-spec requests.
+   - It also ensures no contradictory adjectives creep into the prompt. For instance, if tone is “modern and minimalist,” the skill will remove any terms in the brief that suggest clutter or a different style.
+   - Using the `qa_checklist.md` as a guide, it might run quick code checks (via allowed `code` tool) on the draft prompt – e.g., verifying that at least one of our core colors is mentioned, or that the prompt stays under a token length limit optimal for the model.
+
+3. **Prompt Assembly:**
+   - The skill merges everything into a coherent prompt. It injects color tokens in a natural language way (e.g., “with an **Azure blue** background” using the name tied to `#0078D4`), and references to style (e.g. “**minimalist, accessible design**”) and composition (“ample whitespace for text, sleek info-graphics style”). 
+   - If a reference image is provided, the skill will include it according to model: for Stable Diffusion, it might suggest a ControlNet Reference or an IP-Adapter usage:contentReference[oaicite:15]{index=15}; for OpenAI, it might plan an initial generation followed by a variation with the reference as input.
+   - **Multiple Panels:** If multiple images are needed, the skill will carry over the style across them. It may set a fixed random seed for deterministic consistency or explicitly instruct to use the same parameters for each generation. Techniques like generating all panels in one batch with a multi-image model pass (for diffusion) could be noted if available. Each panel prompt is clearly delineated.
+   - The output prompt(s) are finalized in this step, ready to send to the image generation service.
+
+4. **Automated QA (Post-generation):**
+   - *After* images are generated by the lab (this is outside the skill’s direct scope, but the skill anticipates it), we run a Python script (via `code`) to analyze the images for adherence. For example, we can check the dominant colors to see if Azure blue is present, or use OCR to ensure any AI-rendered text isn’t gibberish. We also validate the aspect ratio by reading image dimensions.
+   - Any deviations found are reported. For instance, if an image came out with a black background instead of the specified blue (perhaps due to model interpretation), the report will flag “Background color off-brand.” This feedback helps designers quickly pinpoint what to fix or regenerate.
+
+5. **Collaboration & Handoff:**
+   - The skill outputs everything in a structured format for easy review. The Social Media Outreach team receives:
+     - The prompt package (so they know what was asked of the AI),
+     - The spec annotations (so they can check brand elements),
+     - The QA report (so they can focus their attention during review).
+   - From here, the human reviewers go through the stages: checking layout (the images’ composition and text spacing, aided by our annotations on text-to-image ratio), checking colors/branding (which our color tokens and report make straightforward), and final content alignment (ensuring the visuals match the post caption or story – this remains a human judgment area, though our skill strives to support it by following the brief closely).
+   - Once approved, the assets proceed to publishing. The skill’s job is effectively done until we loop back with performance data.
+
+6. **Post-publication Logging:**
+   - As a final behind-the-scenes step, the skill (or the system around it) logs the prompt and key parameters alongside the asset identifier. This allows Outreach to later add engagement metrics and analyze trends. For example, if a certain illustration style consistently outperforms others, we might update the `prompt_templates.md` to favor that style. This continuous improvement loop is part of the skill’s long-term purpose, ensuring we **measure and optimize** what we generate:contentReference[oaicite:16]{index=16}.
+
+## Guidelines and Best Practices
+- **Keep Prompts Focused:** Don’t overload the prompt with too many ideas. Our templates use concise language and prioritize the key visual elements that align with the brand. This avoids confusing the model (and the audience). *Example:* Instead of “A busy city with people and graphs and a rocket to symbolize growth,” an on-brand prompt would simplify to “**A clean, minimalist chart graphic rising upward** on an Azure blue backdrop, **simple city skyline line-art** beneath, conveying growth and innovation.”
+- **Use **Semantic Design Tokens****: In templates, refer to colors and styles by their semantic role when possible (e.g. “Azure brand blue” instead of just “blue”, “Segoe-like clear font”). This reinforces consistency. Our `brand_tokens.json` might also define semantic aliases (like `primaryColor` = Azure Blue) which the skill can translate.
+- **Leverage Model Strengths Cautiously:** If using DALL·E or similar, take advantage of its ability to follow detailed instructions but be wary of its limits with text and logos. If using Stable Diffusion, make use of control nets or reference images to lock in style across variations. The skill suggests these tactics in the prompt package, but ensure the team has the pipeline set up to execute them. For instance, we might say “(Use reference image X for style via ControlNet)” in the instructions.
+- **Accessibility & Ethics:** Always consider how the image will be perceived by all audiences. High contrast and clarity are not just aesthetic choices, they are accessibility mandates. The skill’s QA includes a contrast check (e.g. verifying sufficient color contrast ratio for text). Also, if any AI generation might produce ambiguous or culturally sensitive imagery, err on the side of caution and review carefully. We follow the responsible AI guidelines as noted (provenance metadata, content that is inclusive and respectful). While the skill mostly handles the technical side, it adheres to those principles by design.
+- **Iterate with Feedback:** Treat the skill’s output as a first draft. The design team should feel free to come back with “prompts adjustments” if, say, the imagery isn’t hitting the right note. Every accepted or rejected output can improve our templates. Over time, the combination of automated enforcement and human creativity will refine the generative process to be both efficient and richly on-brand.
+
+## Examples
+
+- **LinkedIn Carousel (5 slides, 16:9):** See the `prompt_templates.md` for a sample layout. The first slide prompt might read: *“Slide 1 – Title: **Modern Azure-style** cover image, Azure blue background with white title text (leave space), an abstract network graphic subtly in background, conveys AI innovation.”* Slides 2–4 provide supporting visuals (e.g. simplified diagrams or icons) following a similar style. Slide 5 prompt includes a call-to-action message with perhaps a depicted arrow or target symbol – all in the same color scheme and minimalistic style.
+- **Single Infographic Post (1:1):** The template might combine the title and content in one image. *E.g.*: *“Square infographic: Split 60/40 text vs graphic. Left side white space with a short **educational blurb** in Segoe-like font; right side an illustration – flat design lightbulb and gears in Azure blue and gray, representing idea and mechanism. Clean, no extra decor.”*
+- **YouTube Thumbnail (16:9) via Generative AI:** If the skill were applied to a thumbnail (just as another use-case), we’d emphasize bold imagery with clear focal point and minimal text (since YouTube thumbnails use overlaid text separately). The prompt might ensure an interesting image that still leaves the top/bottom areas free for YouTube’s timestamp and title overlays.
+
+*(The above examples are illustrative; actual prompt wordings are in the templates resource to allow easy updates without altering this core SKILL.md.)*
+
+## Notes
+- This skill focuses on **prompt standardization and QA** rather than creative concept generation. It assumes the creative direction is given in the brief (or decided by humans) and our job is to technically enforce consistency and quality.
+- The **resources** folder includes all the reference data for easy maintenance. If the brand palette updates or the team decides on a new aspect ratio, we update the JSON or markdown specs, not the skill logic.
+- We remain model-agnostic in description (aside from optional model-specific tweaks). As new image models emerge or existing ones gain features (for instance, future DALL·E versions that allow more direct stylistic control), this skill can be revised to leverage them while keeping outputs uniform.
+- **Collaboration is key:** This skill is an assistive tool for designers and the Outreach team. It doesn’t replace their judgment but amplifies their ability to execute the brand vision quickly and reliably. By incorporating the review feedback loops and measurement into the process, we ensure the human teams remain in control of the brand’s creative direction:contentReference[oaicite:17]{index=17}:contentReference[oaicite:18]{index=18}.
+
+```markdown
+*(End of SKILL.md)*
