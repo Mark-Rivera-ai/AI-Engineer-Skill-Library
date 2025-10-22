@@ -18,8 +18,6 @@ The goal of this project is to:
 
 ---
 
-## System Architecture Overview
-
 # Agentic Ecosystem - System Architecture Overview
 
 ## Governance & Coordination Layer
